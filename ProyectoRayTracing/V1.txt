@@ -1,0 +1,281 @@
+#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include "math_functions.h"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+#include <stdio.h>
+
+struct sphere
+{
+	float radio;
+	float x;
+	float y;
+	float z;
+	//Propiedades esfera
+	uchar r;
+	uchar g;
+	uchar b;
+};
+
+struct ray
+{
+	//origen
+	float o_x;
+	float o_y;
+	float o_z;
+
+	float dir_x;
+	float dir_y;
+	float dir_z;
+};
+
+struct light
+{
+	float radio;
+	float x;
+	float y;
+	float z;
+	uchar r;
+	uchar g;
+	uchar b;
+};
+
+struct vector3
+{
+	float x;
+	float y;
+	float z;
+};
+
+__device__ bool sphereInter(ray* ray_test, sphere* obj)
+{
+	float vX, vY, vZ;
+	float discriminante;
+
+	float a, b, c;
+
+	//destino - origen
+	vX = ray_test->o_x - obj->x;
+	vY = ray_test->o_y - obj->y;
+	vZ = ray_test->o_z - obj->z;
+
+	a = (ray_test->dir_x * ray_test->dir_x + ray_test->dir_y * ray_test->dir_y + ray_test->dir_z * ray_test->dir_z);
+	b = 2.0f * (vX * ray_test->dir_x + vY * ray_test->dir_y + vZ * ray_test->dir_z);
+	c = (vX * vX + vY * vY + vZ * vZ) - (obj->radio * obj->radio);
+	discriminante = b * b - 4 * a * c;
+	if (discriminante < 0.0f)
+		return false;
+	else
+		return true;
+
+	return false; //por default, nunca vamos a llegar a aquí
+}
+
+__global__ void rayCasting // kernel
+(
+	vector3* camera, // el centro de la camara
+	vector3* pi_corner, // esquina superior izquierda
+	uchar* output, // imagen resultante
+	sphere* objects,
+	int numObjects,
+	int width,
+	int height,
+	float inc_x, //incremento (distancia entre pixeles) en el height
+	float inc_y //incremento (distancia entre pixeles) en el width
+)
+{
+	//columna
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+
+	//fila 
+	int j = blockDim.y * blockIdx.y + threadIdx.y;
+
+	if (i < width && j < height) //estamos dentro de la imagen
+	{
+		int idx = j * width + i;
+
+		ray primary; //se declara al rayo primario
+		primary.o_x = camera->x; // .acceso por valor ->acceso por referencia
+		primary.o_y = camera->y;
+		primary.o_z = camera->z;
+
+		vector3 dest; //donde cae en el plano de la imagen?
+		dest.x = pi_corner->x + inc_x * i; //vamos a la derecha
+		dest.y = pi_corner->y - inc_y * j; //vamos hacia abajo
+		dest.z = 1;
+
+		//destino - origen nos da el vector de dirección
+		primary.dir_x = dest.x - primary.o_x;
+		primary.dir_y = dest.y - primary.o_y;
+		primary.dir_z = dest.z - primary.o_z;
+
+		float magnitud = sqrtf //funcion de cuda
+		(
+			primary.dir_x * primary.dir_x + primary.dir_y * primary.dir_y + primary.dir_z * primary.dir_z
+		);
+
+		//normalizamos
+		primary.dir_x /= magnitud;
+		primary.dir_y /= magnitud;
+		primary.dir_z /= magnitud;
+
+		//llenamos de un color
+		output[idx] = 30;
+		for (int k = 0; k < numObjects; k++)
+		{
+			if (sphereInter(&primary, &objects[k])) //objects ya es apuntador, lo puedo pasar directo
+				output[idx] = 255;
+		}
+	}
+}
+
+/*
+Origen de la camara va a estar en 0,0,0
+Va a estar viendo hacia Z
+
+El plano de la imagen estará en Z = 1
+
+El plano va a tener de ancho 2 unidades, y de alto 2 unidades
+Por lo tanto, 2/720 es el tamaño de cada pixel
+
+Vamos a tener una esfera con centro en 0,0,5, radio 1
+
+El centro del plano (su origen) será -1,1,1 (arriba a la izquierda)
+*/
+
+int main()
+{
+	int width = 720, height = 720;
+	int pixelSize = width * height;
+	float pi_width = 2.0;
+	float pi_height = pi_width * height / width; //Tamaño del pixel
+	uchar* img_dev; //apuntador 
+
+	//apuntador a una esfera. Malloc regresa algo tipo void. Tenemos que decirle que corresponde a sphere
+	sphere* esf1 = (sphere*)malloc(sizeof(sphere));
+	sphere* esf2 = (sphere*)malloc(sizeof(sphere));
+
+	const int num_esferas = 3;
+
+	sphere* esferas = (sphere*)malloc(sizeof(sphere) * num_esferas);
+
+	//Damos posición y radio a la esfera
+	esferas[0].x = 0;
+	esferas[0].y = 0;
+	esferas[0].z = 5;
+	esferas[0].radio = 1;
+	esferas[0].r = 255;
+	esferas[0].g = 0;
+	esferas[0].b = 0;
+
+	esferas[1].x = 2;
+	esferas[1].y = 1;
+	esferas[1].z = 5;
+	esferas[1].radio = 1;
+	esferas[1].r = 255;
+	esferas[1].g = 0;
+	esferas[1].b = 0;
+
+	esferas[2].x = -2;
+	esferas[2].y = 3;
+	esferas[2].z = 5;
+	esferas[2].radio = 1;
+	esferas[2].r = 255;
+	esferas[2].g = 0;
+	esferas[2].b = 0;
+
+
+
+	//Definiendo camara
+	vector3* camera = (vector3*)malloc(sizeof(vector3));
+	camera->x = 0;
+	camera->y = 0;
+	camera->z = 0;
+
+	//Definiendo el origen del plano
+	vector3* img_corner = (vector3*)malloc(sizeof(vector3));
+	img_corner->x = -1;
+	img_corner->y = pi_height / 2.0;
+	img_corner->z = 1;
+
+
+	//calculamos los incrementos
+	float inc_x = pi_width / width;
+	float inc_y = pi_height / height;
+
+	dim3 threads(16, 16);
+	dim3 blocks(ceil((float)width / (float)threads.x), ceil((float)height / (float)threads.y));
+
+	//Definimos apuntadores para el gpu
+	vector3* camera_dev, * img_corner_dev;
+	sphere* esf1_dev;
+	sphere* esf2_dev;
+
+	sphere* esferas_dev;
+
+
+
+	cudaError_t cudaStatus;
+
+	//Le asignamos la memoria
+	cudaMalloc(&img_dev, pixelSize * sizeof(uchar)); //uchar y char pesan 1 byte, da igual la multiplicación
+	cudaMalloc(&camera_dev, sizeof(vector3));
+	cudaMalloc(&img_corner_dev, sizeof(vector3));
+	cudaMalloc(&esf1_dev, sizeof(sphere));
+	cudaMalloc(&esf2_dev, sizeof(sphere));
+
+	cudaMalloc(&esferas_dev, sizeof(sphere) * num_esferas);
+
+
+	//copiamos de CPU a GPU (la imagen no necesita que se le copie info)
+	cudaMemcpy(camera_dev, camera, sizeof(vector3), cudaMemcpyHostToDevice);
+	cudaMemcpy(img_corner_dev, img_corner, sizeof(vector3), cudaMemcpyHostToDevice);
+	cudaMemcpy(esf1_dev, esf1, sizeof(sphere), cudaMemcpyHostToDevice);
+	cudaMemcpy(esf2_dev, esf2, sizeof(sphere), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(esferas_dev, esferas, sizeof(sphere) * num_esferas, cudaMemcpyHostToDevice);
+
+
+
+	//width, height, inc_x y inc_y se van a mandar copias, los otros manejan siempre el mismo valor (porque son punteros)
+	//los datos primitivos como flotantes y enteros pueden mandarse directamente sin ser punteros
+	//porque son datos muy basicos y no le cuesta tanto trabajo
+	rayCasting << <blocks, threads >> > (camera_dev, img_corner_dev, img_dev, esferas_dev, num_esferas, width, height, inc_x, inc_y);
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		return cudaStatus;
+	}
+	else
+	{
+		fprintf(stderr, "\n\n\nSUCCESS in cudaGetLastError\n\n");
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+		return cudaStatus;
+	}
+	else
+	{
+		fprintf(stderr, "\n\n\nSUCCESS in cudaDeviceSynchronize\n\n");
+	}
+
+	cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8U); //imagen de openCV del tamaño adecuado
+
+	//copiamos de GPU a CPU, sobre la imagen
+	cudaMemcpy(frame.ptr(), img_dev, width * height, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(frame.data, img_dev, width * height, cudaMemcpyDeviceToHost); //alterno
+
+	cv::imshow("salida", frame);
+	cv::waitKey(0);
+
+	return 0;
+
+
+}

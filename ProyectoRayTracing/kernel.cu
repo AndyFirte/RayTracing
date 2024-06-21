@@ -1,0 +1,694 @@
+﻿#include "cuda_runtime.h"
+#include "device_launch_parameters.h"
+#include "math_functions.h"
+#include <opencv2/imgproc/imgproc.hpp>
+#include <opencv2/highgui/highgui.hpp>
+
+#include <stdio.h>
+
+#include <iostream>
+
+struct sphere
+{
+	float radio;
+	float x;
+	float y;
+	float z;
+	//Propiedades esfera
+	uchar r;
+	uchar g;
+	uchar b;
+};
+
+struct ray
+{
+	//origen
+	float o_x;
+	float o_y;
+	float o_z;
+
+	float dir_x;
+	float dir_y;
+	float dir_z;
+};
+
+struct light
+{
+	float radio;
+	float x;
+	float y;
+	float z;
+	uchar r;
+	uchar g;
+	uchar b;
+};
+
+struct vector3
+{
+	float x;
+	float y;
+	float z;
+};
+
+__device__ void normaliza(vector3* vector)
+{
+	float norma = sqrtf(vector->x * vector->x + vector->y * vector->y + vector->z * vector->z);
+	vector->x /= norma;
+	vector->y /= norma;
+	vector->z /= norma;
+}
+
+__device__ vector3 phongShading
+(
+	light* luces,
+	int num_luces,
+	vector3* point,
+	vector3* normal,
+	vector3* camera,
+	vector3* color
+)
+{
+	float ambiental = 0.3;
+	float difuso = 0.5;
+	float specular = 0.2;
+
+	vector3 colorSalida;
+	colorSalida.x = 0;
+	colorSalida.y = 0;
+	colorSalida.z = 0;
+
+	//AMBIENTAL
+	colorSalida.x = color->x * ambiental; //ejemplo, 210.0 * 0.2 = 42.0
+	colorSalida.y = color->y * ambiental;
+	colorSalida.z = color->z * ambiental;
+
+	for (int k = 0; k < num_luces; k++)
+	{
+		//DIFUSO
+		vector3 vec_luz;
+		vec_luz.x = luces[k].x - point->x;
+		vec_luz.y = luces[k].y - point->y;
+		vec_luz.z = luces[k].z - point->z;
+
+		normaliza(&vec_luz);
+
+		float dot_prod = vec_luz.x * normal->x + vec_luz.y * normal->y + vec_luz.z * normal->z;
+
+		if (dot_prod > 0)
+		{
+			dot_prod *= difuso;
+			colorSalida.x += dot_prod * color->x;
+			colorSalida.y += dot_prod * color->y;
+			colorSalida.z += dot_prod * color->z;
+
+			//Especular
+			vector3 rVect; //l - 2 dot(l,n)n FORMULA CORREGIDA: 2 dot(l,n)n - l. Aunque tambien funciona multiplicar l por -1 como hicimos abajo vvv
+
+			vec_luz.x *= -1;
+			vec_luz.y *= -1;
+			vec_luz.z *= -1;
+
+			rVect.x = vec_luz.x - 2.0f * (vec_luz.x * normal->x + vec_luz.y * normal->y + vec_luz.z * normal->z) * normal->x;
+			rVect.y = vec_luz.y - 2.0f * (vec_luz.x * normal->x + vec_luz.y * normal->y + vec_luz.z * normal->z) * normal->y;
+			rVect.z = vec_luz.z - 2.0f * (vec_luz.x * normal->x + vec_luz.y * normal->y + vec_luz.z * normal->z) * normal->z;
+
+			vector3 dirCam;
+			dirCam.x = camera->x - point->x;
+			dirCam.y = camera->y - point->y;
+			dirCam.z = camera->z - point->z;
+
+			normaliza(&dirCam);
+
+			float dotVR = rVect.x * dirCam.x + rVect.y * dirCam.y + rVect.z * dirCam.z;
+
+			if (dotVR > 0)
+			{
+				dotVR *= powf(dotVR, 20) * specular;
+
+				colorSalida.x += dotVR * color->x;
+				colorSalida.y += dotVR * color->y;
+				colorSalida.z += dotVR * color->z;
+
+			}
+
+		}
+	}
+
+
+	colorSalida.x = min(255, (int)roundf(colorSalida.x));
+	colorSalida.y = min(255, (int)roundf(colorSalida.y));
+	colorSalida.z = min(255, (int)roundf(colorSalida.z));
+
+
+	return colorSalida;
+}
+
+__device__ bool sphereInter(ray* ray_test, sphere* obj, float* dist)
+{
+	float vX, vY, vZ;
+	float discriminante;
+
+	float a, b, c;
+
+	//destino - origen
+	vX = ray_test->o_x - obj->x;
+	vY = ray_test->o_y - obj->y;
+	vZ = ray_test->o_z - obj->z;
+
+	a = (ray_test->dir_x * ray_test->dir_x + ray_test->dir_y * ray_test->dir_y + ray_test->dir_z * ray_test->dir_z);
+	b = 2.0f * (vX * ray_test->dir_x + vY * ray_test->dir_y + vZ * ray_test->dir_z);
+	c = (vX * vX + vY * vY + vZ * vZ) - (obj->radio * obj->radio);
+	discriminante = b * b - 4 * a * c;
+	if (discriminante < 0.0f)
+		return false;
+	else
+	{
+		*dist = (-b - sqrtf(discriminante)) / (2.0f * a);
+		return true;
+	}
+
+	return false; //por default, nunca vamos a llegar a aquí
+}
+
+__device__ bool lightInter(ray* ray_test, light* obj, float* dist)
+{
+	float vX, vY, vZ;
+	float discriminante;
+
+	float a, b, c;
+
+	//destino - origen
+	vX = ray_test->o_x - obj->x;
+	vY = ray_test->o_y - obj->y;
+	vZ = ray_test->o_z - obj->z;
+
+	a = (ray_test->dir_x * ray_test->dir_x + ray_test->dir_y * ray_test->dir_y + ray_test->dir_z * ray_test->dir_z);
+	b = 2.0f * (vX * ray_test->dir_x + vY * ray_test->dir_y + vZ * ray_test->dir_z);
+	c = (vX * vX + vY * vY + vZ * vZ) - (obj->radio * obj->radio);
+	discriminante = b * b - 4 * a * c;
+	if (discriminante < 0.0f)
+		return false;
+	else
+	{
+		*dist = (-b - sqrtf(discriminante)) / (2.0f * a);
+		return true;
+	}
+
+	return false; //por default, nunca vamos a llegar a aquí
+}
+
+__device__ vector3 Rebotar
+(
+	ray* rayoActual, //debe estar ya normalizado
+	vector3* normal, //debe estar ya normalizado
+	bool* hayReboteActual,
+	bool* hayReboteConLuz,
+	light* luces,
+	sphere* objects,
+	vector3* interPoint,
+	int numObjects,
+	int num_luces,
+	int* objetoActual
+)
+{
+	ray rayoRebote;
+
+	//si rayoOriginal y normal ya están normalizados, rayoRebote estará normalizado
+	rayoRebote.dir_x = rayoActual->dir_x - 2.0f * (rayoActual->dir_x * normal->x + rayoActual->dir_y * normal->y + rayoActual->dir_z * normal->z) * normal->x;
+	rayoRebote.dir_y = rayoActual->dir_y - 2.0f * (rayoActual->dir_x * normal->x + rayoActual->dir_y * normal->y + rayoActual->dir_z * normal->z) * normal->y;
+	rayoRebote.dir_z = rayoActual->dir_z - 2.0f * (rayoActual->dir_x * normal->x + rayoActual->dir_y * normal->y + rayoActual->dir_z * normal->z) * normal->z;
+
+	rayoRebote.o_x = interPoint->x;
+	rayoRebote.o_y = interPoint->y;
+	rayoRebote.o_z = interPoint->z;
+
+	//Se actualiza rayo actual
+	*rayoActual = rayoRebote;
+
+	float dist = 0;
+
+	vector3 colorRebote;
+	colorRebote.x = 0;
+	colorRebote.y = 0;
+	colorRebote.z = 0;
+
+	vector3 nuevoInterPoint;
+	int nuevoObjetoActual;
+
+	float minDist = 9999;
+
+	for (int k = 0; k < numObjects; k++)
+	{
+		if (sphereInter(rayoActual, &objects[k], &dist) && k != *objetoActual)
+		{
+			if (dist < 0)
+			{
+				continue;
+			}
+			if (fabs(dist) < minDist)
+				minDist = fabs(dist);
+			else
+				continue;
+			*hayReboteActual = true;
+
+			nuevoInterPoint.x = rayoActual->o_x + rayoActual->dir_x * dist;
+			nuevoInterPoint.y = rayoActual->o_y + rayoActual->dir_y * dist;
+			nuevoInterPoint.z = rayoActual->o_z + rayoActual->dir_z * dist;
+
+			nuevoObjetoActual = k;
+
+			//Se actualiza normal
+			normal->x = nuevoInterPoint.x - objects[k].x;
+			normal->y = nuevoInterPoint.y - objects[k].y;
+			normal->z = nuevoInterPoint.z - objects[k].z;
+
+			normaliza(normal);
+
+			//los uchars se asignan a floats, por lo que no habrá problemas con las divisiones
+			colorRebote.x = objects[k].r;
+			colorRebote.y = objects[k].g;
+			colorRebote.z = objects[k].b;
+
+			colorRebote = phongShading(luces, num_luces, &nuevoInterPoint, normal, interPoint, &colorRebote);
+		}
+	}
+
+	for (int k = 0; k < num_luces; k++)
+	{
+		if (lightInter(rayoActual, &luces[k], &dist)) //objects ya es apuntador, lo puedo pasar directo
+		{
+			if (dist < 0)
+			{
+				continue;
+			}
+			if (fabs(dist) < minDist)
+				minDist = fabs(dist);
+			else
+				continue;
+
+			*hayReboteActual = false;
+			*hayReboteConLuz = true;
+			colorRebote.x = luces[k].r;
+			colorRebote.y = luces[k].g;
+			colorRebote.z = luces[k].b;
+
+		}
+	}
+
+
+	//se actualiza interPoint
+	if (*hayReboteActual == true)
+	{
+		*interPoint = nuevoInterPoint;
+		*objetoActual = nuevoObjetoActual;
+	}
+
+	return colorRebote;
+}
+
+__global__ void rayCasting // kernel
+(
+	vector3* camera, // el centro de la camara
+	light* luces,
+	vector3* pi_corner, // esquina superior izquierda
+	uchar* output, // imagen resultante
+	sphere* objects,
+	int numObjects,
+	int num_luces,
+	int num_rebotes,
+	int width,
+	int height,
+	float inc_x, //incremento (distancia entre pixeles) en el height
+	float inc_y //incremento (distancia entre pixeles) en el width
+)
+{
+	//columna
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+
+	//fila 
+	int j = blockDim.y * blockIdx.y + threadIdx.y;
+
+	if (i < width && j < height) //estamos dentro de la imagen
+	{
+		int idx = (j * width + i) * 3;
+
+		ray primary; //se declara al rayo primario
+		primary.o_x = camera->x; // .acceso por valor ->acceso por referencia
+		primary.o_y = camera->y;
+		primary.o_z = camera->z;
+
+		vector3 dest; //donde cae en el plano de la imagen?
+		dest.x = pi_corner->x + inc_x * i; //vamos a la derecha
+		dest.y = pi_corner->y - inc_y * j; //vamos hacia abajo
+		dest.z = 1;
+
+		//destino - origen nos da el vector de dirección
+		primary.dir_x = dest.x - primary.o_x;
+		primary.dir_y = dest.y - primary.o_y;
+		primary.dir_z = dest.z - primary.o_z;
+
+		float magnitud = sqrtf //funcion de cuda
+		(
+			primary.dir_x * primary.dir_x + primary.dir_y * primary.dir_y + primary.dir_z * primary.dir_z
+		);
+
+		//normalizamos
+		primary.dir_x /= magnitud;
+		primary.dir_y /= magnitud;
+		primary.dir_z /= magnitud;
+
+		//Creamos el fondo
+		output[idx] = 30;
+		output[idx + 1] = 30;
+		output[idx + 2] = 30;
+
+		//Coloreamos las esferas
+		float dist;
+		dist = 0;
+
+		float minDist = 9999;
+
+		for (int k = 0; k < numObjects; k++)
+		{
+			if (sphereInter(&primary, &objects[k], &dist)) //objects ya es apuntador, lo puedo pasar directo
+			{
+				if (dist < 0)
+				{
+					continue;
+				}
+				if (fabs(dist) < minDist)
+					minDist = fabs(dist);
+				else
+					continue;
+
+				int indiceEsferaActual = k;
+
+				vector3 interPoint;
+				interPoint.x = primary.dir_x * dist;
+				interPoint.y = primary.dir_y * dist;
+				interPoint.z = primary.dir_z * dist;
+
+				vector3 normal;
+				normal.x = interPoint.x - objects[k].x;
+				normal.y = interPoint.y - objects[k].y;
+				normal.z = interPoint.z - objects[k].z;
+
+				normaliza(&normal);
+				vector3 color; //los uchars se asignan a floats, por lo que no habrá problemas con las divisiones
+				color.x = objects[k].r;
+				color.y = objects[k].g;
+				color.z = objects[k].b;
+
+				color = phongShading(luces, num_luces, &interPoint, &normal, camera, &color);
+
+				/*
+				color.x = 100;
+				color.y = 100;
+				color.z = 100;
+				*/
+
+				bool hayRebote = false;
+				vector3 colorRebote;
+				colorRebote.x = 0;
+				colorRebote.y = 0;
+				colorRebote.z = 0;
+
+				int rebotesAcumulados = 0;
+
+				//auxiliares
+				ray auxPrimary;
+				vector3 auxCamera;
+
+				auxPrimary = primary;
+				auxCamera = *camera;
+
+				bool hayReboteConLuz = false;
+
+				for (int reboteActual = 0; reboteActual < num_rebotes; reboteActual++)
+				{
+					bool hayReboteActual = false;
+
+					vector3 colorReboteActual;
+					colorReboteActual.x = 0;
+					colorReboteActual.y = 0;
+					colorReboteActual.z = 0;
+
+					colorReboteActual = Rebotar(
+						&primary, //se necesita actualizar, pero se necesita afuera del if: usar auxiliar
+						&normal, //se necesita actualizar, solo se necesita adentro del if: actualizar dentro de la función
+						&hayReboteActual, //se necesita reiniciar: se reinicia al inicio del for
+						&hayReboteConLuz, //se necesita reiniciar: se reinicia al inicio del for
+						luces, //no se necesita actualizar
+						objects, //no se necesita actualizar
+						&interPoint, //se necesita actualizar, solo se necesita adentro del if: actualizar dentro de la función
+						numObjects, //no se necesita actualizar
+						num_luces, //no se necesita actualizar
+						&indiceEsferaActual //se necesita actualizar, solo se necesita adentro del if: actualizar dentro de la función
+					);
+
+					if (hayReboteConLuz)
+					{
+						colorRebote = colorReboteActual;
+						break;
+					}
+					if (!hayReboteActual)
+					{
+						break;
+					}
+
+					colorRebote.x += colorReboteActual.x;
+					colorRebote.y += colorReboteActual.y;
+					colorRebote.z += colorReboteActual.z;
+
+
+					hayRebote = true;
+					rebotesAcumulados++;
+				}
+
+				//Se rescatan los valores originales
+				primary = auxPrimary;
+				*camera = auxCamera;
+
+				if (hayRebote)
+				{
+					color.x += colorRebote.x;
+					color.y += colorRebote.y;
+					color.z += colorRebote.z;
+
+					color.x /= (rebotesAcumulados + 1);
+					color.y /= (rebotesAcumulados + 1);
+					color.z /= (rebotesAcumulados + 1);
+				}
+
+				if (hayReboteConLuz)
+				{
+					color = colorRebote;
+				}
+
+				color.x = min(255, (int)roundf(color.x));
+				color.y = min(255, (int)roundf(color.y));
+				color.z = min(255, (int)roundf(color.z));
+
+				output[idx] = color.z; //los floats se convierten en uchar de forma implicita.
+				output[idx + 1] = color.y;
+				output[idx + 2] = color.x;
+
+			}
+
+		}
+
+
+		for (int k = 0; k < num_luces; k++)
+		{
+			if (lightInter(&primary, &luces[k], &dist)) //objects ya es apuntador, lo puedo pasar directo
+			{
+				if (fabs(dist) < minDist)
+					minDist = fabs(dist);
+				else
+					continue;
+
+				output[idx] = luces[k].b;
+				output[idx + 1] = luces[k].g;
+				output[idx + 2] = luces[k].r;
+
+			}
+		}
+	}
+}
+
+/*
+Origen de la camara va a estar en 0,0,0
+Va a estar viendo hacia Z
+
+El plano de la imagen estará en Z = 1
+
+El plano va a tener de ancho 2 unidades, y de alto 2 unidades
+Por lo tanto, 2/720 es el tamaño de cada pixel
+
+Vamos a tener una esfera con centro en 0,0,5, radio 1
+
+El centro del plano (su origen) será -1,1,1 (arriba a la izquierda)
+*/
+
+int main()
+{
+	bool guardarEnBuenaCalidad = false;
+	int num_rebotes = 6;
+
+	int width = 720, height = 720;
+
+	if (guardarEnBuenaCalidad) //no se mostrará, buscar resultado en explorador de archivos
+	{
+		width *= 21;
+		height *= 21;
+	}
+
+	int pixelSize = width * height;
+	float pi_width = 2.0;
+	float pi_height = pi_width * height / width; //Tamaño del pixel
+	uchar* img_dev; //apuntador 
+
+	const int num_esferas = 3;
+
+	//apuntador a una esfera. Malloc regresa algo tipo void. Tenemos que decirle que corresponde a sphere
+	sphere* esferas = (sphere*)malloc(sizeof(sphere) * num_esferas);
+
+	//Damos posición y radio a la esfera
+	esferas[0].x = 0.5;
+	esferas[0].y = 0;
+	esferas[0].z = 5;
+	esferas[0].radio = 1;
+	esferas[0].r = 255;
+	esferas[0].g = 0;
+	esferas[0].b = 0;
+
+	esferas[1].x = -0.1;
+	esferas[1].y = -0.8;
+	esferas[1].z = 4.5;
+	esferas[1].radio = 0.4;
+	esferas[1].r = 0;
+	esferas[1].g = 1;
+	esferas[1].b = 255;
+
+	esferas[2].x = -1.5;
+	esferas[2].y = 1;
+	esferas[2].z = 4;
+	esferas[2].radio = 1;
+	esferas[2].r = 255;
+	esferas[2].g = 254;
+	esferas[2].b = 0;
+
+	const int num_luces = 2;
+	light* luces = (light*)malloc(sizeof(light) * num_luces);
+	luces[0].x = 2;
+	luces[0].y = 1;
+	luces[0].z = 4;
+	luces[0].r = 255;
+	luces[0].g = 255;
+	luces[0].b = 255;
+	luces[0].radio = 0.2;
+
+	/*
+	*/
+	luces[1].x = -1;
+	luces[1].y = 0;
+	luces[1].z = 2;
+	luces[1].r = 255;
+	luces[1].g = 255;
+	luces[1].b = 255;
+	luces[1].radio = 0.2;
+
+	//Definiendo camara
+	vector3* camera = (vector3*)malloc(sizeof(vector3));
+	camera->x = 0;
+	camera->y = 0;
+	camera->z = 0;
+
+	//Definiendo el origen del plano
+	vector3* img_corner = (vector3*)malloc(sizeof(vector3));
+	img_corner->x = -1;
+	img_corner->y = pi_height / 2.0;
+	img_corner->z = 1;
+
+
+	//calculamos los incrementos
+	float inc_x = pi_width / width;
+	float inc_y = pi_height / height;
+
+	dim3 threads(16, 16);
+	dim3 blocks(ceil((float)width / (float)threads.x), ceil((float)height / (float)threads.y));
+
+	//Definimos apuntadores para el gpu
+	vector3* camera_dev, * img_corner_dev;
+	sphere* esferas_dev;
+	light* luces_dev;
+
+	cudaError_t cudaStatus;
+
+	//Le asignamos la memoria
+	cudaMalloc(&img_dev, pixelSize * sizeof(uchar) * 3); //uchar y char pesan 1 byte, da igual la multiplicación
+	cudaMalloc(&camera_dev, sizeof(vector3));
+	cudaMalloc(&img_corner_dev, sizeof(vector3));
+	cudaMalloc(&esferas_dev, sizeof(sphere) * num_esferas);
+	cudaMalloc(&luces_dev, sizeof(light) * num_luces);
+
+
+	//copiamos de CPU a GPU (la imagen no necesita que se le copie info)
+	cudaMemcpy(camera_dev, camera, sizeof(vector3), cudaMemcpyHostToDevice);
+	cudaMemcpy(img_corner_dev, img_corner, sizeof(vector3), cudaMemcpyHostToDevice);
+	cudaMemcpy(esferas_dev, esferas, sizeof(sphere) * num_esferas, cudaMemcpyHostToDevice);
+	cudaMemcpy(luces_dev, luces, sizeof(light) * num_luces, cudaMemcpyHostToDevice);
+
+
+
+	//width, height, inc_x y inc_y se van a mandar copias, los otros manejan siempre el mismo valor (porque son punteros)
+	//los datos primitivos como flotantes y enteros pueden mandarse directamente sin ser punteros
+	//porque son datos muy basicos y no le cuesta tanto trabajo
+	rayCasting << <blocks, threads >> > (camera_dev, luces_dev, img_corner_dev, img_dev, esferas_dev, num_esferas, num_luces, num_rebotes, width, height, inc_x, inc_y);
+
+	// Check for any errors launching the kernel
+	cudaStatus = cudaGetLastError();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		return cudaStatus;
+	}
+	else
+	{
+		fprintf(stderr, "\n\n\nSUCCESS in cudaGetLastError\n\n");
+	}
+
+	// cudaDeviceSynchronize waits for the kernel to finish, and returns
+	// any errors encountered during the launch.
+	cudaStatus = cudaDeviceSynchronize();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceSynchronize returned error code %d after launching addKernel!\n", cudaStatus);
+		return cudaStatus;
+	}
+	else
+	{
+		fprintf(stderr, "\n\n\nSUCCESS in cudaDeviceSynchronize\n\n");
+	}
+
+	cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
+
+	//copiamos de GPU a CPU, sobre la imagen
+	cudaMemcpy(frame.data, img_dev, width * height * 3, cudaMemcpyDeviceToHost);
+	//cudaMemcpy(frame.ptr(), img_dev, width * height, cudaMemcpyDeviceToHost); //alterno
+
+	if (!guardarEnBuenaCalidad)
+		cv::imshow("salida", frame);
+
+	bool result = cv::imwrite("D:/Git/RayTracing/Renders/resultado_actual_test.png", frame);
+	if (result)
+		std::cout << "La imagen se guardó correctamente." << std::endl;
+	else
+		std::cerr << "Error al guardar la imagen." << std::endl;
+
+
+
+	cv::waitKey(0);
+
+	return 0;
+
+
+}

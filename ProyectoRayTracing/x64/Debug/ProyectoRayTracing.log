@@ -1,0 +1,18 @@
+﻿  Compiling CUDA source file kernel.cu...
+  
+  D:\Git\RayTracing\ProyectoRayTracing>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin\nvcc.exe" -gencode=arch=compute_52,code=\"sm_52,compute_52\" --use-local-env -ccbin "D:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.37.32822\bin\HostX64\x64" -x cu   -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\include"  -G   --keep-dir x64\Debug  -maxrregcount=0   --machine 64 --compile -cudart static  -g  -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /FS /Zi /RTC1 /MDd " -Xcompiler "/Fdx64\Debug\vc143.pdb" -o D:\Git\RayTracing\ProyectoRayTracing\x64\Debug\kernel.cu.obj "D:\Git\RayTracing\ProyectoRayTracing\kernel.cu" 
+  math_functions.h is an internal header file and must not be used directly.  This file will be removed in a future CUDA release.  Please use cuda_runtime_api.h or cuda_runtime.h instead.
+  kernel.cu
+  tmpxft_0000488c_00000000-7_kernel.cudafe1.cpp
+  math_functions.h is an internal header file and must not be used directly.  This file will be removed in a future CUDA release.  Please use cuda_runtime_api.h or cuda_runtime.h instead.
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(565): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(566): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(568): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(589): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(599): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(610): warning C4244: '=': conversión de 'double' a 'float'; posible pérdida de datos
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(619): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(619): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
+     Creando biblioteca D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.lib y objeto D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.exp
+LINK : warning LNK4098: la biblioteca predeterminada'LIBCMT' entra en conflicto con otras bibliotecas; use la biblioteca /NODEFAULTLIB:biblioteca
+  ProyectoRayTracing.vcxproj -> D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.exe
