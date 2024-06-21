@@ -1,0 +1,29 @@
+Correr el programa una vez (esto genera carpetas necesarias)
+
+En "Explorador de soluciones", en NombreMiProyecto (no la solución)
+Click derecho > Propiedades
+
+Configuración: Debug
+
+Directorios de VC++ > Directorios de archivos de inclusión > Editar
+D:\andre\Down\opencv\build\include
+Aceptar
+
+Directorios de VC++ > Directorios de archivos de bibliotecas > Editar
+D:\andre\Down\opencv\build\x64\vc16\lib
+Aceptar
+
+En D:\andre\Down\opencv\build\x64\vc16\lib está el arhivo
+opencv_world490d.lib
+copiar su nombre, (asegurarse que tenga la "d" final)
+Vinculador > Entrada > Dependencias adicionales > Editar
+En ventana de hasta arriba, incluir opencv_world490d.lib
+Aceptar
+
+Aceptar propiedades
+
+En D:\andre\Down\opencv\build\x64\vc16\bin
+Copiar el archivo opencv_world490d.dll
+(asegurarse que tenga la "d" final)
+Pegar en NombreMiProyecto\x64\Debug
+No confundir con NombreMiProyecto\NombreMiProyecto\x64\Debug
