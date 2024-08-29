@@ -50,6 +50,17 @@ struct vector3
 	float z;
 };
 
+cudaError_t generateFrameWithCuda(
+	int width, int height,
+	float inc_x, float inc_y,
+	int num_esferas, int num_luces, int num_rebotes,
+	vector3* camera,
+	vector3* img_corner,
+	sphere* esferas,
+	light* luces,
+	cv::Mat* frame
+);
+
 __device__ void normaliza(vector3* vector)
 {
 	float norma = sqrtf(vector->x * vector->x + vector->y * vector->y + vector->z * vector->z);
@@ -543,10 +554,8 @@ int main()
 		height *= 21;
 	}
 
-	int pixelSize = width * height;
 	float pi_width = 2.0;
 	float pi_height = pi_width * height / width; //Tamaño del pixel
-	uchar* img_dev; //apuntador 
 
 	const int num_esferas = 3;
 
@@ -615,15 +624,58 @@ int main()
 	float inc_x = pi_width / width;
 	float inc_y = pi_height / height;
 
-	dim3 threads(16, 16);
-	dim3 blocks(ceil((float)width / (float)threads.x), ceil((float)height / (float)threads.y));
+
+	
+
+	cudaError_t cudaStatus;
+
+	cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
+
+	cudaStatus = generateFrameWithCuda(width, height, inc_x, inc_y, num_esferas, num_luces, num_rebotes, camera, img_corner, esferas, luces, &frame);
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "generateFrameWithCuda failed!");
+		return 1;
+	}
+	
+
+	if (!guardarEnBuenaCalidad)
+		cv::imshow("salida", frame);
+
+	bool result = cv::imwrite("D:/Git/RayTracing/Renders/resultado_actual_test.png", frame);
+	if (result)
+		std::cout << "La imagen se guardó correctamente." << std::endl;
+	else
+		std::cerr << "Error al guardar la imagen." << std::endl;
+
+
+
+	cv::waitKey(0);
+
+	return 0;
+
+
+}
+
+cudaError_t generateFrameWithCuda(
+	int width, int height,
+	float inc_x, float inc_y,
+	int num_esferas, int num_luces, int num_rebotes,
+	vector3* camera,
+	vector3* img_corner,
+	sphere* esferas,
+	light* luces,
+	cv::Mat* frame
+)
+{
+
+	int pixelSize = width * height;
 
 	//Definimos apuntadores para el gpu
+	uchar* img_dev; //apuntador 
 	vector3* camera_dev, * img_corner_dev;
 	sphere* esferas_dev;
 	light* luces_dev;
 
-	cudaError_t cudaStatus;
 
 	//Le asignamos la memoria
 	cudaMalloc(&img_dev, pixelSize * sizeof(uchar) * 3); //uchar y char pesan 1 byte, da igual la multiplicación
@@ -639,17 +691,20 @@ int main()
 	cudaMemcpy(esferas_dev, esferas, sizeof(sphere) * num_esferas, cudaMemcpyHostToDevice);
 	cudaMemcpy(luces_dev, luces, sizeof(light) * num_luces, cudaMemcpyHostToDevice);
 
-
+	dim3 threads(16, 16);
+	dim3 blocks(ceil((float)width / (float)threads.x), ceil((float)height / (float)threads.y));
 
 	//width, height, inc_x y inc_y se van a mandar copias, los otros manejan siempre el mismo valor (porque son punteros)
 	//los datos primitivos como flotantes y enteros pueden mandarse directamente sin ser punteros
 	//porque son datos muy basicos y no le cuesta tanto trabajo
 	rayCasting << <blocks, threads >> > (camera_dev, luces_dev, img_corner_dev, img_dev, esferas_dev, num_esferas, num_luces, num_rebotes, width, height, inc_x, inc_y);
 
+	cudaError_t cudaStatus;
+	
 	// Check for any errors launching the kernel
 	cudaStatus = cudaGetLastError();
 	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "addKernel launch failed: %s\n", cudaGetErrorString(cudaStatus));
+		fprintf(stderr, "rayCasting launch failed: %s\n", cudaGetErrorString(cudaStatus));
 		return cudaStatus;
 	}
 	else
@@ -669,26 +724,9 @@ int main()
 		fprintf(stderr, "\n\n\nSUCCESS in cudaDeviceSynchronize\n\n");
 	}
 
-	cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
-
 	//copiamos de GPU a CPU, sobre la imagen
-	cudaMemcpy(frame.data, img_dev, width * height * 3, cudaMemcpyDeviceToHost);
+	cudaMemcpy((*frame).data, img_dev, width * height * 3, cudaMemcpyDeviceToHost);
 	//cudaMemcpy(frame.ptr(), img_dev, width * height, cudaMemcpyDeviceToHost); //alterno
 
-	if (!guardarEnBuenaCalidad)
-		cv::imshow("salida", frame);
-
-	bool result = cv::imwrite("D:/Git/RayTracing/Renders/resultado_actual_test.png", frame);
-	if (result)
-		std::cout << "La imagen se guardó correctamente." << std::endl;
-	else
-		std::cerr << "Error al guardar la imagen." << std::endl;
-
-
-
-	cv::waitKey(0);
-
-	return 0;
-
-
+	return cudaStatus;
 }
