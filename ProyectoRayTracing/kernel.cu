@@ -8,6 +8,10 @@
 
 #include <iostream>
 
+using namespace std::chrono;
+
+using namespace std;
+
 struct sphere
 {
 	float radio;
@@ -58,7 +62,8 @@ cudaError_t generateFrameWithCuda(
 	vector3* img_corner,
 	sphere* esferas,
 	light* luces,
-	cv::Mat* frame
+	cv::Mat* frame,
+	bool isVideo
 );
 
 __device__ void normaliza(vector3* vector)
@@ -79,9 +84,9 @@ __device__ vector3 phongShading
 	vector3* color
 )
 {
-	float ambiental = 0.3;
-	float difuso = 0.5;
-	float specular = 0.2;
+	float ambiental = 0.3f + 0.1f;
+	float difuso = 0.5f;
+	float specular = 0.2f;
 
 	vector3 colorSalida;
 	colorSalida.x = 0;
@@ -369,9 +374,9 @@ __global__ void rayCasting // kernel
 		primary.dir_z /= magnitud;
 
 		//Creamos el fondo
-		output[idx] = 30;
-		output[idx + 1] = 30;
-		output[idx + 2] = 30;
+		output[idx] = 24; //B
+		output[idx + 1] = 0; //G
+		output[idx + 2] = 24; //R
 
 		//Coloreamos las esferas
 		float dist;
@@ -567,25 +572,25 @@ int main()
 	esferas[0].y = 0;
 	esferas[0].z = 5;
 	esferas[0].radio = 1;
-	esferas[0].r = 255;
+	esferas[0].r = 230;
 	esferas[0].g = 0;
-	esferas[0].b = 0;
+	esferas[0].b = 91;
 
 	esferas[1].x = -0.1;
 	esferas[1].y = -0.8;
 	esferas[1].z = 4.5;
 	esferas[1].radio = 0.4;
-	esferas[1].r = 0;
-	esferas[1].g = 1;
-	esferas[1].b = 255;
+	esferas[1].r = 255;
+	esferas[1].g = 241;
+	esferas[1].b = 0;
 
 	esferas[2].x = -1.5;
 	esferas[2].y = 1;
 	esferas[2].z = 4;
 	esferas[2].radio = 1;
-	esferas[2].r = 255;
-	esferas[2].g = 254;
-	esferas[2].b = 0;
+	esferas[2].r = 1;
+	esferas[2].g = 255;
+	esferas[2].b = 244;
 
 	const int num_luces = 2;
 	light* luces = (light*)malloc(sizeof(light) * num_luces);
@@ -624,20 +629,111 @@ int main()
 	float inc_x = pi_width / width;
 	float inc_y = pi_height / height;
 
+	bool isVideo;
+	bool repeatMainMenu = true;
 
-	
+	int choice;
+	while (repeatMainMenu)
+	{
+		cout << "MENU:\n";
+		cout << "1: Render image\n";
+		cout << "2: Render video\n";
+		cout << "Select an option: ";
+
+		cin >> choice;
+
+		switch (choice)
+		{
+		case 1:
+		{
+			isVideo = false;
+			repeatMainMenu = false;
+			break;
+		}
+		case 2:
+		{
+			isVideo = true;
+			repeatMainMenu = false;
+			break;
+		}
+		default:
+		{
+			cout << "Not a valid option. Try again.\n\n";
+			break;
+		}
+		}
+	}
+
+	int FrameStart = 0, FrameEnd = 1680; //56 seconds at 30fps
 
 	cudaError_t cudaStatus;
 
-	cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
+	if (!isVideo)
+	{
+		bool exploringFractal = true;
 
-	cudaStatus = generateFrameWithCuda(width, height, inc_x, inc_y, num_esferas, num_luces, num_rebotes, camera, img_corner, esferas, luces, &frame);
-	if (cudaStatus != cudaSuccess) {
-		fprintf(stderr, "generateFrameWithCuda failed!");
-		return 1;
+		float zoomFactor = 6.0f;
+		float shiftFactor = 6.0f;
+
+		cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
+
+		// Recording the timestamp at the start of the code
+		auto beg = high_resolution_clock::now();
+
+		cudaStatus = generateFrameWithCuda(width, height, inc_x, inc_y, num_esferas, num_luces, num_rebotes, camera, img_corner, esferas, luces, &frame, isVideo);
+		if (cudaStatus != cudaSuccess) {
+			fprintf(stderr, "generateFrameWithCuda failed!");
+			return 1;
+		}
+		cv::imshow("salida", frame);
+
+		// Taking a timestamp after the code is ran
+		auto end = high_resolution_clock::now();
+
+		auto duration = duration_cast<milliseconds>(end - beg);
+
+		system("cls");
+
+		// Displaying the elapsed time
+		cout << "\nElapsed Time: " << duration.count() << " miliseconds.\n";
+		/*
+		while (exploringFractal)
+		{
+		}
+		*/
 	}
-	
+	else
+	{
+		cout << "\nCREATING VIDEO\n\n";
+		for (int index = FrameStart; index <= FrameEnd; index++)
+		{
+			cv::Mat frame = cv::Mat(cv::Size(width, height), CV_8UC3); //imagen de openCV. Usar CV_8U si es blanco y negro
 
+			esferas[0].x -= 0.005;
+			esferas[1].radio += 0.002;
+
+			cudaStatus = generateFrameWithCuda(width, height, inc_x, inc_y, num_esferas, num_luces, num_rebotes, camera, img_corner, esferas, luces, &frame, isVideo);
+			if (cudaStatus != cudaSuccess) {
+				fprintf(stderr, "generateFrameWithCuda failed!");
+				return 1;
+			}
+
+			std::ostringstream ss;
+			ss << "D:/Git/RayTracing/VideoFrames/Video1/"
+				<< "Frame_" << index << ".png";
+			std::string filename = ss.str();
+			bool result = cv::imwrite(filename, frame);
+			if (result)
+				cout << "Image " << index << " saved..." << endl;
+			else
+			{
+				cerr << "\nError while saving image." << endl;
+				return 0;
+			}
+		}
+	}
+	/*
+	MOVER A EL RENDER DE UNA FRAME, MOSTRAR UN MENÚ CON OPCIÓN PARA GUARDAR LA IMAGEN
 	if (!guardarEnBuenaCalidad)
 		cv::imshow("salida", frame);
 
@@ -647,6 +743,12 @@ int main()
 	else
 		std::cerr << "Error al guardar la imagen." << std::endl;
 
+	*/
+	cudaStatus = cudaDeviceReset();
+	if (cudaStatus != cudaSuccess) {
+		fprintf(stderr, "cudaDeviceReset failed!");
+		return 1;
+	}
 
 
 	cv::waitKey(0);
@@ -664,7 +766,8 @@ cudaError_t generateFrameWithCuda(
 	vector3* img_corner,
 	sphere* esferas,
 	light* luces,
-	cv::Mat* frame
+	cv::Mat* frame,
+	bool isVideo
 )
 {
 
@@ -709,7 +812,8 @@ cudaError_t generateFrameWithCuda(
 	}
 	else
 	{
-		fprintf(stderr, "\n\n\nSUCCESS in cudaGetLastError\n\n");
+		if (!isVideo)
+			fprintf(stderr, "\n\n\nSUCCESS in cudaGetLastError\n\n");
 	}
 
 	// cudaDeviceSynchronize waits for the kernel to finish, and returns
@@ -721,7 +825,8 @@ cudaError_t generateFrameWithCuda(
 	}
 	else
 	{
-		fprintf(stderr, "\n\n\nSUCCESS in cudaDeviceSynchronize\n\n");
+		if (!isVideo)
+			fprintf(stderr, "\n\n\nSUCCESS in cudaDeviceSynchronize\n\n");
 	}
 
 	//copiamos de GPU a CPU, sobre la imagen

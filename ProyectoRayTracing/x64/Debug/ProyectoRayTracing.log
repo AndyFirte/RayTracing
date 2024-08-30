@@ -2,17 +2,33 @@
   
   D:\Git\RayTracing\ProyectoRayTracing>"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\bin\nvcc.exe" -gencode=arch=compute_52,code=\"sm_52,compute_52\" --use-local-env -ccbin "D:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.37.32822\bin\HostX64\x64" -x cu   -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\include" -I"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.2\include"  -G   --keep-dir x64\Debug  -maxrregcount=0   --machine 64 --compile -cudart static  -g  -DWIN32 -DWIN64 -D_DEBUG -D_CONSOLE -D_MBCS -Xcompiler "/EHsc /W3 /nologo /Od /FS /Zi /RTC1 /MDd " -Xcompiler "/Fdx64\Debug\vc143.pdb" -o D:\Git\RayTracing\ProyectoRayTracing\x64\Debug\kernel.cu.obj "D:\Git\RayTracing\ProyectoRayTracing\kernel.cu" 
   math_functions.h is an internal header file and must not be used directly.  This file will be removed in a future CUDA release.  Please use cuda_runtime_api.h or cuda_runtime.h instead.
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(673): warning #177-D: variable "exploringFractal" was declared but never referenced
+    		bool exploringFractal = true;
+    		     ^
+  
+  Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+  
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(675): warning #177-D: variable "zoomFactor" was declared but never referenced
+    		float zoomFactor = 6.0f;
+    		      ^
+  
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(676): warning #177-D: variable "shiftFactor" was declared but never referenced
+    		float shiftFactor = 6.0f;
+    		      ^
+  
   kernel.cu
-  tmpxft_0000b498_00000000-7_kernel.cudafe1.cpp
+  tmpxft_000044c8_00000000-7_kernel.cudafe1.cpp
   math_functions.h is an internal header file and must not be used directly.  This file will be removed in a future CUDA release.  Please use cuda_runtime_api.h or cuda_runtime.h instead.
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(574): warning C4305: '=': truncamiento de 'double' a 'float'
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(575): warning C4305: '=': truncamiento de 'double' a 'float'
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(577): warning C4305: '=': truncamiento de 'double' a 'float'
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(598): warning C4305: '=': truncamiento de 'double' a 'float'
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(608): warning C4305: '=': truncamiento de 'double' a 'float'
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(619): warning C4244: '=': conversión de 'double' a 'float'; posible pérdida de datos
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(695): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
-D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(695): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(579): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(580): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(582): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(603): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(613): warning C4305: '=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(624): warning C4244: '=': conversión de 'double' a 'float'; posible pérdida de datos
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(712): warning C4305: '-=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(713): warning C4305: '+=': truncamiento de 'double' a 'float'
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(798): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
+D:\Git\RayTracing\ProyectoRayTracing\kernel.cu(798): warning C4244: 'argumento': conversión de 'float' a 'unsigned int'; posible pérdida de datos
      Creando biblioteca D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.lib y objeto D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.exp
 LINK : warning LNK4098: la biblioteca predeterminada'LIBCMT' entra en conflicto con otras bibliotecas; use la biblioteca /NODEFAULTLIB:biblioteca
   ProyectoRayTracing.vcxproj -> D:\Git\RayTracing\x64\Debug\ProyectoRayTracing.exe
